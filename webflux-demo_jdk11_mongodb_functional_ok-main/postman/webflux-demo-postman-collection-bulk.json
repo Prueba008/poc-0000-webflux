@@ -1,0 +1,137 @@
+{
+  "info": {
+    "name": "WebFlux Demo Mongo API (Bulk Loader)",
+    "_postman_id": "93a47f50-e32c-427e-988e-c2da308fbabe",
+    "description": "Colecci\u00f3n Postman para probar WebFlux + MongoDB Reactive. Incluye carga masiva por batches usando Runner.\n\nPara cargar 1.000.000 productos:\n- Setear variable collection 'batchSize'=10000\n- Ejecutar request 'Bulk - Crear batch' con Runner en 100 iteraciones\n(10000 * 100 = 1.000.000)\n\nRequiere endpoint: POST /api/v1/productos/bulk",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "batchSize",
+      "value": "1000"
+    },
+    {
+      "key": "categoria",
+      "value": "CargaMasiva"
+    },
+    {
+      "key": "precioMin",
+      "value": "10.0"
+    },
+    {
+      "key": "precioMax",
+      "value": "999.9"
+    }
+  ],
+  "item": [
+    {
+      "name": "Actuator - Health",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/actuator/health"
+      }
+    },
+    {
+      "name": "Productos - Listar",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/v1/productos"
+      }
+    },
+    {
+      "name": "Productos - Crear (single)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nombre\": \"Producto Postman Single\",\n  \"descripcion\": \"Creado desde Postman (single)\",\n  \"precio\": 100.5,\n  \"stock\": 10,\n  \"categoria\": \"{{categoria}}\",\n  \"activo\": true\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/productos"
+      }
+    },
+    {
+      "name": "Bulk - Crear batch (Runner)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Genera un batch de productos en pm.variables.bulkPayload",
+              "const batchSize = parseInt(pm.collectionVariables.get('batchSize') || '1000', 10);",
+              "const categoria = pm.collectionVariables.get('categoria') || 'CargaMasiva';",
+              "const minP = parseFloat(pm.collectionVariables.get('precioMin') || '10.0');",
+              "const maxP = parseFloat(pm.collectionVariables.get('precioMax') || '999.9');",
+              "",
+              "function rand(min, max) { return Math.random() * (max - min) + min; }",
+              "function round2(n) { return Math.round(n * 100) / 100; }",
+              "",
+              "// Identificador \u00fanico por iteraci\u00f3n (\u00fatil para trazabilidad)",
+              "const iter = pm.info.iteration;",
+              "const runId = pm.environment.get('runId') || (Date.now().toString());",
+              "pm.environment.set('runId', runId);",
+              "",
+              "const payload = [];",
+              "for (let i = 0; i < batchSize; i++) {",
+              "  const idx = iter * batchSize + i;",
+              "  payload.push({",
+              "    nombre: `P-${runId}-${idx}`,",
+              "    descripcion: `Producto generado en batch. runId=${runId}, idx=${idx}`,",
+              "    precio: round2(rand(minP, maxP)),",
+              "    stock: Math.floor(rand(0, 200)),",
+              "    categoria: categoria,",
+              "    activo: true",
+              "  });",
+              "}",
+              "",
+              "pm.variables.set('bulkPayload', JSON.stringify(payload));",
+              "console.log(`Generated batch size=${batchSize}, iteration=${iter}, runId=${runId}`);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Tests b\u00e1sicos",
+              "pm.test('Status 2xx', function () {",
+              "  pm.expect(pm.response.code).to.be.within(200, 299);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{{bulkPayload}}"
+        },
+        "url": "{{baseUrl}}/api/v1/productos/bulk"
+      }
+    }
+  ]
+}

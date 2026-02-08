@@ -1,0 +1,87 @@
+spring:
+  application:
+    name: webflux-demo
+  main:
+    banner-mode: console
+    web-application-type: reactive
+
+server:
+  port: 8080
+  error:
+    include-message: always
+    include-binding-errors: always
+
+management:
+  endpoints:
+    web:
+      base-path: /actuator
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+      env: ${spring.profiles.active:dev}
+
+logging:
+  level:
+    com.example.webflux: INFO
+    org.springframework.data.mongodb: INFO
+    reactor.netty: INFO
+
+app:
+  errors:
+    includeStacktrace: false
+  correlation:
+    header: X-Correlation-Id
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/webfluxdb
+logging:
+  level:
+    com.example.webflux: DEBUG
+
+app:
+  errors:
+    includeStacktrace: true
+
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/webfluxdb_test
+logging:
+  level:
+    com.example.webflux: DEBUG
+app:
+  errors:
+    includeStacktrace: true
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/webfluxdb}
+logging:
+  level:
+    com.example.webflux: INFO
