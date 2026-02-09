@@ -1,7 +1,8 @@
 package com.example.webflux.handler;
 
-import com.example.webflux.model.dto.ProductoRequest;
-import com.example.webflux.service.ProductoService;
+import com.example.webflux.model.dto.producto.ProductoRequest;
+import com.example.webflux.model.dto.producto.ProductoResponse;
+import com.example.webflux.service.ProductService;
 import com.example.webflux.validation.ValidationSupport;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,13 +21,13 @@ import java.time.Duration;
 @RequiredArgsConstructor
 public class ProductoHandler {
 
-    private final ProductoService service;
+    private final ProductService service;
     private final Validator validator;
 
     public Mono<ServerResponse> getAll(ServerRequest req) {
         return ServerResponse.ok()
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(service.findAllActivos(), com.example.webflux.model.dto.ProductoResponse.class);
+                .body(service.findAllActivos(), ProductoResponse.class);
     }
 
     public Mono<ServerResponse> getById(ServerRequest req) {
@@ -62,6 +63,6 @@ public class ProductoHandler {
         return ServerResponse.ok()
                 .contentType(MediaType.TEXT_EVENT_STREAM)
                 .body(service.findAllActivos().delayElements(Duration.ofSeconds(1)),
-                        com.example.webflux.model.dto.ProductoResponse.class);
+                        ProductoResponse.class);
     }
 }

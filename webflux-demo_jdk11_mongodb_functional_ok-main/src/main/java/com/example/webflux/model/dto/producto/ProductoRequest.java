@@ -1,4 +1,4 @@
-package com.example.webflux.model.dto;
+package com.example.webflux.model.dto.producto;
 
 import lombok.*;
 
