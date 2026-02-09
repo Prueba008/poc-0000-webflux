@@ -1,12 +1,15 @@
 package com.example.webflux.service;
 
-import com.example.webflux.exception.ConflictException;
-import com.example.webflux.exception.NotFoundException;
+import com.example.webflux.controller.ProductoBulkControllerV2;
+import com.example.webflux.exception.BusinessException;
 import com.example.webflux.model.ProductDoc;
 import com.example.webflux.model.Producto;
+import com.example.webflux.model.dto.bulk.BulkOperationResult;
+import com.example.webflux.model.dto.bulk.BulkUpdateRequest;
 import com.example.webflux.model.dto.producto.ProductoRequest;
 import com.example.webflux.model.dto.producto.ProductoResponse;
 import com.example.webflux.repository.ProductoRepository;
+import com.example.webflux.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
@@ -22,7 +25,10 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Collection;
 
-
+/**
+ * Implementación de servicios de producto optimizada para flujos no bloqueantes.
+ * Maneja la lógica de negocio, persistencia y transformaciones de DTO.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -49,7 +55,7 @@ public class ProductServiceImpl implements ProductService {
     public Mono<ProductoResponse> findById(String id) {
         return productoRepository.findById(id)
                 .map(ProductoResponse::fromEntity)
-                .switchIfEmpty(Mono.error(new NotFoundException("Producto no encontrado: " + id)));
+                .switchIfEmpty(Mono.error(new BusinessException.NotFound("Producto no encontrado: " + id)));
     }
 
     @Override
@@ -75,7 +81,7 @@ public class ProductServiceImpl implements ProductService {
     @Override
     public Mono<ProductoResponse> create(ProductoRequest req) {
         return productoRepository.findByNombreIgnoreCase(req.getNombre())
-                .flatMap(exists -> Mono.<Producto>error(new ConflictException("El nombre ya existe")))
+                .flatMap(exists -> Mono.<Producto>error(new BusinessException.Conflict("El nombre ya existe")))
                 .switchIfEmpty(Mono.defer(() -> save(req)))
                 .map(ProductoResponse::fromEntity);
     }
@@ -91,17 +97,17 @@ public class ProductServiceImpl implements ProductService {
         return null;
     }
 
-
     /**
-     * Lógica centralizada de persistencia.
-     * Recibe ProductoRequest para asegurar que el contrato de entrada sea el correcto.
+     * CORRECCIÓN: El método debe recibir ProductoRequest para persistencia.
+     * Retorna la entidad para uso interno o composición.
+     *
+     * @param request
      */
-
-    public Mono<Producto> save(ProductoRequest request) { // 1. Corregido de Response a Request
+    public Mono<Producto> save(ProductoRequest request) { // Firma alineada con la interfaz
         return Mono.just(request)
-                .flatMap(this::validateRequest)          // 2. Validación reactiva
-                .map(this::mapToEntity)                  // 3. Conversión DTO -> Entidad
-                .flatMap(p -> {                          // 4. Persistencia con Auditoría
+                .flatMap(this::validateRequest)          // Validación reactiva de reglas de negocio
+                .map(this::mapToEntity)                  // Transformación de DTO a Entidad de dominio
+                .flatMap(p -> {                          // Pipeline de persistencia con auditoría
                     Instant now = Instant.now();
                     if (p.getId() == null) {
                         p.setFechaCreacion(now);
@@ -112,12 +118,15 @@ public class ProductServiceImpl implements ProductService {
                     p.setFechaActualizacion(now);
                     return productoRepository.save(p);
                 })
-                .doOnSuccess(p -> log.info("Producto guardado exitosamente con ID: {}", p.getId()));
+                .doOnSuccess(p -> log.info("Producto persistido exitosamente con ID: {}", p.getId())) //
+                .doOnError(e -> log.error("Error crítico durante la persistencia: {}", e.getMessage()));
     }
+
+
     @Override
     public Mono<ProductoResponse> update(String id, ProductoRequest req) {
         return productoRepository.findById(id)
-                .switchIfEmpty(Mono.error(new NotFoundException("Producto no encontrado")))
+                .switchIfEmpty(Mono.error(new BusinessException.NotFound("Producto no encontrado")))
                 .flatMap(p -> {
                     updateEntityWithRequest(p, req);
                     p.setFechaActualizacion(Instant.now());
@@ -128,7 +137,7 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public Mono<ProductoResponse> patch(String id, ProductoRequest req) {
-        return update(id, req); // Reutiliza lógica de actualización parcial
+        return update(id, req);
     }
 
     @Override
@@ -142,19 +151,19 @@ public class ProductServiceImpl implements ProductService {
                 .then();
     }
 
-    // --- Operaciones Bulk ---
+    // --- Operaciones Bulk (Corregidas y Optimizadas) ---
 
     @Override
     public Flux<Producto> saveAll(Collection<Producto> productos) {
+        Instant now = Instant.now();
         return Flux.fromIterable(productos)
                 .map(p -> {
-                    Instant now = Instant.now();
                     p.setFechaCreacion(now);
                     p.setFechaActualizacion(now);
                     if (p.getActivo() == null) p.setActivo(true);
                     return p;
                 })
-                .collectList()
+                .collectList() // Agrupa para minimizar latencia de red si el driver lo soporta
                 .flatMapMany(productoRepository::saveAll);
     }
 
@@ -201,9 +210,10 @@ public class ProductServiceImpl implements ProductService {
     @Override
     public Mono<ProductoResponse> reducirStock(String id, Integer cantidad) {
         return productoRepository.findById(id)
+                .switchIfEmpty(Mono.error(new BusinessException.NotFound("Producto no encontrado")))
                 .flatMap(p -> {
                     int result = p.getStock() - cantidad;
-                    if (result < 0) return Mono.error(new IllegalArgumentException("Stock insuficiente"));
+                    if (result < 0) return Mono.error(new BusinessException.BadRequest("Stock insuficiente"));
                     p.setStock(result);
                     p.setFechaActualizacion(Instant.now());
                     return productoRepository.save(p);
@@ -248,7 +258,7 @@ public class ProductServiceImpl implements ProductService {
 
     private Mono<ProductoRequest> validateRequest(ProductoRequest req) {
         if (req.getPrecio() != null && req.getPrecio().compareTo(BigDecimal.ZERO) < 0) {
-            return Mono.error(new IllegalArgumentException("Precio negativo"));
+            return Mono.error(new BusinessException.BadRequest("El precio no puede ser negativo"));
         }
         return Mono.just(req);
     }

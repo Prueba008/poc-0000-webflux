@@ -1,7 +1,10 @@
 package com.example.webflux.service;
 
+import com.example.webflux.metrics.ProductMetrics;
 import com.example.webflux.model.ProductDoc;
+import com.example.webflux.model.Producto;
 import com.example.webflux.model.dto.bulk.BulkLoadResult;
+import com.example.webflux.repository.ProductoRepository;
 import com.example.webflux.service.BulkLoadService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -23,14 +26,35 @@ public class BulkLoadServiceImpl extends BulkLoadService {
 
     private static final int BATCH_SIZE = 2000;
     private static final int MAX_IN_FLIGHT_BATCHES = 2;
+    private final ProductoRepository repository;
+    private final ProductMetrics metrics;
 
-    public BulkLoadServiceImpl(ReactiveMongoTemplate mongo, MeterRegistry registry) {
+    /**
+     * Procesa la carga de 1M de registros desde un flujo de datos.
+     * Utiliza Backpressure para no saturar la base de datos.
+     */
+    public Mono<Void> processBulkCsv(Flux<Producto> csvFlux) {
+        final int BATCH_SIZE = 1000;
+        final int CONCURRENCY = 8;
+
+        return csvFlux
+                .buffer(BATCH_SIZE) // Agrupa registros para reducir operaciones de red
+                .flatMap(batch -> repository.saveAll(batch)
+                                .doOnComplete(() -> metrics.recordOperation("bulk_load", batch.size())),
+                        CONCURRENCY) // Controla el paralelismo de escritura
+                .then()
+                .doOnSuccess(v -> log.info("Carga masiva de 1M finalizada exitosamente"))
+                .doOnError(e -> log.error("Error en la carga masiva: {}", e.getMessage()));
+    }
+    public BulkLoadServiceImpl(ReactiveMongoTemplate mongo, MeterRegistry registry, ProductoRepository repository, ProductMetrics metrics) {
         this.mongo = mongo;
         // Registro de métrica vía Micrometer
         this.globalInsertedCounter = Counter.builder("products.bulk.inserted")
                 .description("Total de productos insertados vía BulkLoad")
                 .tag("service", "bulk-loader")
                 .register(registry);
+        this.repository = repository;
+        this.metrics = metrics;
     }
 
     @Override
@@ -66,4 +90,5 @@ public class BulkLoadServiceImpl extends BulkLoadService {
                         .ms(System.currentTimeMillis() - start)
                         .build()));
     }
+
 }

@@ -1,16 +1,12 @@
 package com.example.webflux.controller;
 
-import com.example.webflux.model.Producto;
 import com.example.webflux.model.dto.ErrorDetail;
-import com.example.webflux.model.dto.bulk.BulkCreateRequest;
 import com.example.webflux.model.dto.bulk.BulkOperationResult;
-import com.example.webflux.model.dto.bulk.BulkStockUpdate;
 import com.example.webflux.model.dto.bulk.BulkUpdateRequest;
 import com.example.webflux.service.ProductService;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
@@ -18,10 +14,13 @@ import reactor.core.publisher.Mono;
 
 import javax.validation.Valid;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * Operaciones masivas optimizadas para alto rendimiento.
+ * Utiliza concurrencia controlada para no saturar el pool de conexiones.
+ */
 @Slf4j
 @RestController
 @RequestMapping("/api/v2/productos/bulk")
@@ -31,40 +30,20 @@ public class ProductoBulkControllerV2 {
     private final ProductService productoService;
 
     /**
-     * Creación masiva.
-     * Implementación optimizada con Streams de Java 11 para mapeo de entidades.
-     */
-    // Bulk create: Corregido para retornar Mono con lista de IDs o conteo
-    @PostMapping("/bulk")
-    @ResponseStatus(HttpStatus.CREATED)
-    public Flux<Producto> bulkCreate(@RequestBody List<Producto> productos) {
-        return productoService.saveAll(productos); //
-    }
-
-    // Bulk delete: Asegura que el flujo se complete correctamente
-    @DeleteMapping("/bulk")
-    public Mono<ResponseEntity<Void>> bulkDelete(@RequestBody List<String> ids) {
-        return productoService.deactivateAll(ids) //
-                .then(Mono.just(ResponseEntity.noContent().build()));
-    }
-
-    /**
-     * Actualización masiva con control de concurrencia.
-     * Utiliza ItemResult para gestionar éxitos y errores de forma granular sin detener el flujo.
+     * Actualiza un lote de productos de forma asíncrona.
+     * Implementa un patrón de error parcial (Partial Failure) para resiliencia.
      */
     @PutMapping("/update")
     public Mono<ResponseEntity<BulkOperationResult>> updateBulk(@Valid @RequestBody BulkUpdateRequest request) {
-        final int CONCURRENCY = 32;
+        final int CONCURRENCY_LIMIT = 32;
 
         return Flux.fromIterable(request.getProductos())
                 .flatMap(dto -> {
-                    if (dto.getId() == null) {
-                        return Mono.just(ItemResult.fail(null, "ID requerido"));
-                    }
+                    if (dto.getId() == null) return Mono.just(ItemResult.fail(null, "ID requerido"));
 
                     return productoService.findById(dto.getId())
                             .flatMap(existing -> {
-                                // Mapeo manual parcial (Patch-style)
+                                // Mapeo parcial preventivo
                                 if (dto.getNombre() != null) existing.setNombre(dto.getNombre());
                                 if (dto.getPrecio() != null) existing.setPrecio(dto.getPrecio());
                                 if (dto.getStock() != null) existing.setStock(dto.getStock());
@@ -73,32 +52,31 @@ public class ProductoBulkControllerV2 {
                             })
                             .map(saved -> ItemResult.ok(saved.getId()))
                             .onErrorResume(e -> Mono.just(ItemResult.fail(dto.getId(), e.getMessage())));
-                }, CONCURRENCY)
+                }, CONCURRENCY_LIMIT)
                 .collectList()
-                .map(items -> {
-                    List<String> okIds = items.stream()
-                            .filter(ItemResult::isOk)
-                            .map(ItemResult::getId)
-                            .collect(Collectors.toList());
-
-                    List<ErrorDetail> errs = items.stream()
-                            .filter(it -> !it.isOk())
-                            .map(it -> ErrorDetail.builder().id(it.getId()).message(it.getError()).build())
-                            .collect(Collectors.toList());
-
-                    return ResponseEntity.ok(BulkOperationResult.builder()
-                            .operation("UPDATE")
-                            .successCount(okIds.size())
-                            .failedCount(items.size() - okIds.size())
-                            .successIds(okIds)
-                            .errors(errs)
-                            .build());
-                });
+                .map(this::mapToBulkResult);
     }
 
-    /**
-     * Clase estática auxiliar para recolectar estados de procesamiento.
-     */
+    private ResponseEntity<BulkOperationResult> mapToBulkResult(List<ItemResult> results) {
+        List<String> successIds = results.stream()
+                .filter(ItemResult::isOk)
+                .map(ItemResult::getId)
+                .collect(Collectors.toList());
+
+        List<ErrorDetail> errors = results.stream()
+                .filter(it -> !it.isOk())
+                .map(it -> ErrorDetail.builder().id(it.getId()).message(it.getError()).build())
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(BulkOperationResult.builder()
+                .operation("BULK_UPDATE")
+                .successCount(successIds.size())
+                .failedCount(errors.size())
+                .successIds(successIds)
+                .errors(errors)
+                .build());
+    }
+
     @Getter
     private static class ItemResult {
         private final boolean ok;

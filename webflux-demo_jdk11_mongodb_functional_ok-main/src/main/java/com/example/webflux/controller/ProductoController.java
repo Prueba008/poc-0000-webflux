@@ -1,6 +1,5 @@
 package com.example.webflux.controller;
 
-import com.example.webflux.model.Producto;
 import com.example.webflux.model.dto.producto.ProductoRequest;
 import com.example.webflux.model.dto.producto.ProductoResponse;
 import com.example.webflux.service.ProductService;
@@ -19,8 +18,11 @@ import javax.validation.constraints.Min;
 import javax.validation.constraints.NotBlank;
 import java.math.BigDecimal;
 import java.time.Duration;
-import java.util.List;
 
+/**
+ * Endpoint principal para la gestión individual de productos.
+ * Implementa un modelo de programación reactivo no bloqueante.
+ */
 @Slf4j
 @Validated
 @RestController
@@ -31,25 +33,31 @@ public class ProductoController {
     private final ProductService productoService;
 
     /**
-     * Recupera todos los productos activos.
-     * Se asegura la conversión de Entidad a DTO para mantener la integridad de la API.
+     * Recupera el catálogo completo de productos en estado activo.
+     * @return Flux con la secuencia de ProductoResponse.
      */
     @GetMapping("/activos")
     public Flux<ProductoResponse> getAll() {
-        log.info("Petición recibida para listar todos los productos activos");
+        log.info("Iniciando recuperación de productos activos");
         return productoService.findAllActivos();
     }
 
+    /**
+     * Obtiene un producto por su identificador único.
+     * @param id Identificador en formato String.
+     * @return Mono con ResponseEntity (200 OK o 404 si no existe).
+     */
     @GetMapping(value = "/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<ProductoResponse>> getById(@PathVariable @NotBlank String id) {
-        return productoService.findById(id).map(ResponseEntity::ok);
+        return productoService.findById(id)
+                .map(ResponseEntity::ok)
+                .defaultIfEmpty(ResponseEntity.notFound().build());
     }
 
-    @GetMapping(value = "/disponibles", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Flux<ProductoResponse> disponibles() {
-        return productoService.findDisponibles();
-    }
-
+    /**
+     * Endpoint polimórfico de búsqueda.
+     * Prioriza por nombre, luego categoría y finalmente rango de precio.
+     */
     @GetMapping(value = "/buscar", produces = MediaType.APPLICATION_JSON_VALUE)
     public Flux<ProductoResponse> buscar(
             @RequestParam(required = false) String nombre,
@@ -63,78 +71,29 @@ public class ProductoController {
         return productoService.findAllActivos();
     }
 
-    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    @ResponseStatus(HttpStatus.CREATED)
-    public Mono<ResponseEntity<ProductoResponse>> create(@Valid @RequestBody ProductoRequest req) {
-        return productoService.create(req)
-                .map(created -> ResponseEntity.status(HttpStatus.CREATED).body(created));
-    }
-
-    @PutMapping(value = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<ProductoResponse>> update(@PathVariable @NotBlank String id,
-                                                        @Valid @RequestBody ProductoRequest req) {
-        return productoService.update(id, req).map(ResponseEntity::ok);
-    }
-
-    @PatchMapping(value = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<ProductoResponse>> patch(@PathVariable @NotBlank String id,
-                                                       @RequestBody ProductoRequest req) {
-        return productoService.patch(id, req).map(ResponseEntity::ok);
-    }
-
-    @DeleteMapping("/{id}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public Mono<ResponseEntity<Void>> delete(@PathVariable @NotBlank String id) {
-        return productoService.softDelete(id).thenReturn(ResponseEntity.noContent().build());
-    }
+    /**
+     * Actualización parcial de stock con validación de concurrencia.
+     * @param id ID del producto.
+     * @param cantidad Unidades a reducir (mínimo 1).
+     */
     @PostMapping("/{id}/reducir-stock")
     public Mono<ResponseEntity<ProductoResponse>> reducirStock(
             @PathVariable @NotBlank String id,
             @RequestParam @Min(1) Integer cantidad) {
-
-        log.info("Solicitud de reducción de stock: Producto {}, Cantidad {}", id, cantidad);
-
+        
+        log.info("Procesando reducción de stock: {} unidades para el ID {}", cantidad, id);
         return productoService.reducirStock(id, cantidad)
-                // .map(ProductoResponse::fromEntity) <-- ELIMINAR: Ya es un ProductoResponse
                 .map(ResponseEntity::ok)
-                .doOnError(e -> log.error("Error al reducir stock: {}", e.getMessage()));
+                .doOnError(e -> log.error("Fallo en reducción de stock: {}", e.getMessage()));
     }
 
+    /**
+     * Stream de productos en tiempo real mediante Server-Sent Events (SSE).
+     * Útil para dashboards o monitoreo en vivo.
+     */
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ProductoResponse> stream() {
         return productoService.findAllActivos()
                 .delayElements(Duration.ofSeconds(2));
-    }
-
-    /**
-     * Retorna el conteo total de productos activos.
-     * Se utiliza ResponseEntity para cumplir con los estándares REST.
-     */
-    @GetMapping("/count")
-    public Mono<ResponseEntity<Long>> count() {
-        log.info("Petición recibida para contar productos activos");
-        return productoService.countByActivo(true)
-                .map(ResponseEntity::ok)
-                .doOnError(e -> log.error("Error al contar productos: {}", e.getMessage()));
-    }
-
-    //bulk
-    // Bulk create: recibe una lista de productos y los guarda
-    @PostMapping("/bulk")
-    @ResponseStatus(HttpStatus.CREATED)
-    public Flux<Producto> bulkCreate(@RequestBody List<Producto> productos) {
-        return productoService.saveAll(productos);
-    }
-
-    // Bulk update: recibe una lista de productos (con id) y los actualiza
-    @PutMapping("/bulk")
-    public Flux<Producto> bulkUpdate(@RequestBody List<Producto> productos) {
-        return productoService.updateAll(productos);
-    }
-
-    // Bulk delete: recibe una lista de ids y los marca como inactivos (borrado lógico)
-    @DeleteMapping("/bulk")
-    public Mono<Void> bulkDelete(@RequestBody List<String> ids) {
-        return productoService.deactivateAll(ids).then();
     }
 }
