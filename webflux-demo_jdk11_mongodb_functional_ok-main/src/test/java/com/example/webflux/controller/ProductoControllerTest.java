@@ -1,6 +1,6 @@
 package com.example.webflux.controller;
 
-import com.example.webflux.model.dto.ProductoRequest;
+import com.example.webflux.model.dto.producto.ProductoRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Tag;
 import org.springframework.beans.factory.annotation.Autowired;

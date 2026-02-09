@@ -1,7 +1,8 @@
 package com.example.webflux.handler;
 
-import com.example.webflux.model.dto.ProductoRequest;
-import com.example.webflux.service.ProductoService;
+import com.example.webflux.model.dto.producto.ProductoRequest;
+import com.example.webflux.model.dto.producto.ProductoResponse;
+import com.example.webflux.service.ProductService;
 import com.example.webflux.validation.ValidationSupport;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,55 +14,83 @@ import reactor.core.publisher.Mono;
 
 import javax.validation.Validator;
 import java.net.URI;
-import java.time.Duration;
 
+/**
+ * Handler funcional para la gestión de productos.
+ * Encapsula la lógica de procesamiento de solicitudes, validación y transformación
+ * de respuestas, manteniendo el desacoplamiento de las rutas.
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class ProductoHandler {
 
-    private final ProductoService service;
+    private final ProductService service;
     private final Validator validator;
 
-    public Mono<ServerResponse> getAll(ServerRequest req) {
-        return ServerResponse.ok()
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(service.findAllActivos(), com.example.webflux.model.dto.ProductoResponse.class);
-    }
-
-    public Mono<ServerResponse> getById(ServerRequest req) {
-        String id = req.pathVariable("id");
-        return service.findById(id)
-                .flatMap(p -> ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(p));
-    }
-
+    /**
+     * Procesa la creación de un nuevo producto.
+     * Realiza validación JSR-303 proactiva antes de invocar la capa de servicio.
+     */
     public Mono<ServerResponse> create(ServerRequest req) {
         return req.bodyToMono(ProductoRequest.class)
-                .doOnNext(r -> ValidationSupport.validateOrThrow(validator, r))
+                .doOnNext(body -> ValidationSupport.validateOrThrow(validator, body))
                 .flatMap(service::create)
-                .flatMap(created -> ServerResponse.created(URI.create("/api/v2/productos/" + created.getId()))
+                .flatMap(res -> ServerResponse.created(URI.create(req.path() + "/" + res.getId()))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .bodyValue(created));
+                        .bodyValue(res))
+                .doOnSuccess(r -> log.info("Producto creado exitosamente"));
     }
 
+    /**
+     * Actualiza un producto existente de forma total.
+     */
     public Mono<ServerResponse> update(ServerRequest req) {
         String id = req.pathVariable("id");
         return req.bodyToMono(ProductoRequest.class)
-                .doOnNext(r -> ValidationSupport.validateOrThrow(validator, r))
-                .flatMap(r -> service.update(id, r))
-                .flatMap(p -> ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(p));
+                .doOnNext(body -> ValidationSupport.validateOrThrow(validator, body))
+                .flatMap(body -> service.update(id, body))
+                .flatMap(res -> ServerResponse.ok()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(res))
+                .switchIfEmpty(ServerResponse.notFound().build());
     }
 
-    public Mono<ServerResponse> delete(ServerRequest req) {
+    /**
+     * Recupera un producto por su ID. 
+     * Implementa switchIfEmpty para retornar 404 Not Found si el Mono resultante es vacío.
+     */
+    public Mono<ServerResponse> getById(ServerRequest req) {
         String id = req.pathVariable("id");
-        return service.softDelete(id)
-                .then(ServerResponse.noContent().build());
+        return service.findById(id)
+                .flatMap(p -> ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(p))
+                .switchIfEmpty(ServerResponse.notFound().build());
     }
 
+    /**
+     * Retorna todos los productos activos.
+     * Utiliza el body de ServerResponse para propagar el Flux, permitiendo el manejo de Backpressure.
+     */
+    public Mono<ServerResponse> getAll(ServerRequest req) {
+        return ServerResponse.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(service.findAllActivos(), ProductoResponse.class);
+    }
+
+    /**
+     * Genera un flujo SSE (Server-Sent Events) para actualizaciones en tiempo real.
+     */
     public Mono<ServerResponse> stream(ServerRequest req) {
         return ServerResponse.ok()
                 .contentType(MediaType.TEXT_EVENT_STREAM)
-                .body(service.findAllActivos().delayElements(Duration.ofSeconds(1)),
-                        com.example.webflux.model.dto.ProductoResponse.class);
+                .body(service.findDisponibles(), ProductoResponse.class);
+    }
+
+    /**
+     * Ejecuta el borrado lógico de un producto.
+     */
+    public Mono<ServerResponse> delete(ServerRequest req) {
+        return service.softDelete(req.pathVariable("id"))
+                .then(ServerResponse.noContent().build());
     }
 }

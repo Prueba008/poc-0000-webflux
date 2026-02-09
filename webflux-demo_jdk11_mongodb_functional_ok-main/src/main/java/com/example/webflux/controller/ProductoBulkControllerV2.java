@@ -1,0 +1,95 @@
+package com.example.webflux.controller;
+
+import com.example.webflux.model.dto.ErrorDetail;
+import com.example.webflux.model.dto.bulk.BulkOperationResult;
+import com.example.webflux.model.dto.bulk.BulkUpdateRequest;
+import com.example.webflux.service.ProductService;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+
+import javax.validation.Valid;
+import java.time.Instant;
+import java.util.List;
+import java.util.stream.Collectors;
+
+/**
+ * Operaciones masivas optimizadas para alto rendimiento.
+ * Utiliza concurrencia controlada para no saturar el pool de conexiones.
+ */
+@Slf4j
+@RestController
+@RequestMapping("/api/v2/productos/bulk")
+@RequiredArgsConstructor
+public class ProductoBulkControllerV2 {
+
+    private final ProductService productoService;
+
+    /**
+     * Actualiza un lote de productos de forma asíncrona.
+     * Implementa un patrón de error parcial (Partial Failure) para resiliencia.
+     */
+    @PutMapping("/update")
+    public Mono<ResponseEntity<BulkOperationResult>> updateBulk(@Valid @RequestBody BulkUpdateRequest request) {
+        final int CONCURRENCY_LIMIT = 32;
+
+        return Flux.fromIterable(request.getProductos())
+                .flatMap(dto -> {
+                    if (dto.getId() == null) return Mono.just(ItemResult.fail(null, "ID requerido"));
+
+                    return productoService.findById(dto.getId())
+                            .flatMap(existing -> {
+                                // Mapeo parcial preventivo
+                                if (dto.getNombre() != null) existing.setNombre(dto.getNombre());
+                                if (dto.getPrecio() != null) existing.setPrecio(dto.getPrecio());
+                                if (dto.getStock() != null) existing.setStock(dto.getStock());
+                                existing.setFechaActualizacion(Instant.now());
+                                return productoService.save(existing);
+                            })
+                            .map(saved -> ItemResult.ok(saved.getId()))
+                            .onErrorResume(e -> Mono.just(ItemResult.fail(dto.getId(), e.getMessage())));
+                }, CONCURRENCY_LIMIT)
+                .collectList()
+                .map(this::mapToBulkResult);
+    }
+
+    private ResponseEntity<BulkOperationResult> mapToBulkResult(List<ItemResult> results) {
+        List<String> successIds = results.stream()
+                .filter(ItemResult::isOk)
+                .map(ItemResult::getId)
+                .collect(Collectors.toList());
+
+        List<ErrorDetail> errors = results.stream()
+                .filter(it -> !it.isOk())
+                .map(it -> ErrorDetail.builder().id(it.getId()).message(it.getError()).build())
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(BulkOperationResult.builder()
+                .operation("BULK_UPDATE")
+                .successCount(successIds.size())
+                .failedCount(errors.size())
+                .successIds(successIds)
+                .errors(errors)
+                .build());
+    }
+
+    @Getter
+    private static class ItemResult {
+        private final boolean ok;
+        private final String id;
+        private final String error;
+
+        private ItemResult(boolean ok, String id, String error) {
+            this.ok = ok;
+            this.id = id;
+            this.error = error;
+        }
+
+        static ItemResult ok(String id) { return new ItemResult(true, id, null); }
+        static ItemResult fail(String id, String error) { return new ItemResult(false, id, error); }
+    }
+}

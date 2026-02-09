@@ -1,6 +1,6 @@
 package com.example.webflux.validation;
 
-import com.example.webflux.exception.BadRequestException;
+import com.example.webflux.exception.BusinessException;
 
 import javax.validation.ConstraintViolation;
 import javax.validation.Validator;
@@ -19,6 +19,6 @@ public final class ValidationSupport {
                 .map(v -> v.getPropertyPath() + ": " + v.getMessage())
                 .collect(Collectors.joining(", "));
 
-        throw new BadRequestException("Error de validación: " + msg);
+        throw new BusinessException.BadRequest("Error de validación: " + msg);
     }
 }
