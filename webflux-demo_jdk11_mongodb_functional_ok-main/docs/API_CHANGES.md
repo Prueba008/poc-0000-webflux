@@ -115,11 +115,11 @@ public Mono<Producto> save(ProductoRequest request) {
 ```json
 // Error típico en bulk update
 {
-  "timestamp": "2026-04-17T00:38:15.744-03:00",
-  "status": 500,
-  "error": "Internal Server Error", 
+  "error": "Internal Server Error",
   "message": "Cannot infer type-variable(s) V",
-  "path": "/api/v2/productos/bulk/update"
+  "path": "/api/v2/productos/bulk/update",
+  "status": 500,
+  "timestamp": "2026-04-17T00:38:15.744-03:00"
 }
 ```
 
