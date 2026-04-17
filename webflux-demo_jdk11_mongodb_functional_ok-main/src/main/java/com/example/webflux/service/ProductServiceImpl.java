@@ -25,6 +25,8 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Collection;
 
+import static reactor.core.publisher.Flux.fromIterable;
+
 /**
  * Implementación de servicios de producto optimizada para flujos no bloqueantes.
  * Maneja la lógica de negocio, persistencia y transformaciones de DTO.
@@ -156,7 +158,7 @@ public class ProductServiceImpl implements ProductService {
     @Override
     public Flux<Producto> saveAll(Collection<Producto> productos) {
         Instant now = Instant.now();
-        return Flux.fromIterable(productos)
+        return fromIterable(productos)
                 .map(p -> {
                     p.setFechaCreacion(now);
                     p.setFechaActualizacion(now);
