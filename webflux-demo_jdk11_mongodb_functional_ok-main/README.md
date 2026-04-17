@@ -14,6 +14,25 @@ Proyecto funcional de Spring Boot 2.7.x + WebFlux + MongoDB Reactivo, con:
 
 - **[Arquitectura](docs/ARCHITECTURE.md)** - Detalles técnicos, patrones y diseño del sistema
 - **[API Reference](docs/API_REFERENCE.md)** - Documentación completa de todos los endpoints
+- **[Guía de Desarrollo](docs/DEVELOPMENT_GUIDE.md)** - Guía completa para desarrolladores
+- **[Estrategia de Testing](docs/TESTING_STRATEGY.md)** - Estrategia completa de testing TDD
+- **[Resumen de Bug Fixes](docs/BUG_FIXES_FINAL.md)** - Documentación completa de bugs corregidos
+
+## Estado Actual del Proyecto
+
+### ✅ Bugs Críticos Corregidos
+1. **Service Interface Mismatch** - Corregida firma incorrecta en `ProductService`
+2. **Bulk Controller Logic Error** - Corregido flujo de datos en operaciones masivas  
+3. **Controller Error Handling** - Mejorado manejo de errores reactivos
+4. **Type Inference Issues** - Resueltos problemas de inferencia de tipos
+5. **Ambiguous Mapping** - Eliminados conflictos de endpoints duplicados
+
+### 🚀 Mejoras Implementadas
+- **Type Safety**: Mejorada seguridad de tipos en DTOs y controladores
+- **Error Handling**: Manejo comprensivo de errores con códigos HTTP correctos
+- **Reactive Patterns**: Aplicación correcta de patrones reactivos
+- **Performance**: Optimizaciones en operaciones bulk y streaming
+- **Testing**: Cobertura completa con tests unitarios, de integración y de rendimiento
 
 ## Requisitos
 - **JDK 11** (versión mínima requerida)
