@@ -3,6 +3,7 @@ package com.example.webflux.controller;
 import com.example.webflux.model.dto.ErrorDetail;
 import com.example.webflux.model.dto.bulk.BulkOperationResult;
 import com.example.webflux.model.dto.bulk.BulkUpdateRequest;
+import com.example.webflux.model.dto.producto.ProductoRequest;
 import com.example.webflux.service.ProductService;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -41,15 +42,12 @@ public class ProductoBulkControllerV2 {
                 .flatMap(dto -> {
                     if (dto.getId() == null) return Mono.just(ItemResult.fail(null, "ID requerido"));
 
-                    return productoService.findById(dto.getId())
-                            .flatMap(existing -> {
-                                // Mapeo parcial preventivo
-                                if (dto.getNombre() != null) existing.setNombre(dto.getNombre());
-                                if (dto.getPrecio() != null) existing.setPrecio(dto.getPrecio());
-                                if (dto.getStock() != null) existing.setStock(dto.getStock());
-                                existing.setFechaActualizacion(Instant.now());
-                                return productoService.save(existing);
-                            })
+                    ProductoRequest req = ProductoRequest.builder()
+                            .nombre(dto.getNombre())
+                            .precio(dto.getPrecio())
+                            .stock(dto.getStock())
+                            .build();
+                    return productoService.patch(dto.getId(), req)
                             .map(saved -> ItemResult.ok(saved.getId()))
                             .onErrorResume(e -> Mono.just(ItemResult.fail(dto.getId(), e.getMessage())));
                 }, CONCURRENCY_LIMIT)

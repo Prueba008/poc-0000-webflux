@@ -86,24 +86,8 @@ public class ProductServiceImpl implements ProductService {
                 .map(ProductoResponse::fromEntity);
     }
 
-    /**
-     * CORRECCIÓN: El método debe recibir ProductoRequest para persistencia.
-     * Retorna la entidad para uso interno o composición.
-     *
-     * @param request
-     */
     @Override
-    public Mono<Producto> save(ProductoResponse request) {
-        return null;
-    }
-
-    /**
-     * CORRECCIÓN: El método debe recibir ProductoRequest para persistencia.
-     * Retorna la entidad para uso interno o composición.
-     *
-     * @param request
-     */
-    public Mono<Producto> save(ProductoRequest request) { // Firma alineada con la interfaz
+    public Mono<Producto> save(ProductoRequest request) {
         return Mono.just(request)
                 .flatMap(this::validateRequest)          // Validación reactiva de reglas de negocio
                 .map(this::mapToEntity)                  // Transformación de DTO a Entidad de dominio
@@ -143,6 +127,7 @@ public class ProductServiceImpl implements ProductService {
     @Override
     public Mono<Void> softDelete(String id) {
         return productoRepository.findById(id)
+                .switchIfEmpty(Mono.error(new BusinessException.NotFound("Producto no encontrado: " + id)))
                 .flatMap(p -> {
                     p.setActivo(false);
                     p.setFechaActualizacion(Instant.now());
@@ -189,8 +174,9 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public Mono<Long> deleteAllById(Collection<String> ids) {
-        return productoRepository.deleteAllById(ids)
-                .then(Mono.fromSupplier(() -> (long) ids.size()));
+        Query query = new Query(Criteria.where("_id").in(ids));
+        return mongoTemplate.remove(query, Producto.class)
+                .map(result -> result.getDeletedCount());
     }
 
     // --- Conteos ---
@@ -209,15 +195,25 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public Mono<ProductoResponse> reducirStock(String id, Integer cantidad) {
-        return productoRepository.findById(id)
-                .switchIfEmpty(Mono.error(new BusinessException.NotFound("Producto no encontrado")))
-                .flatMap(p -> {
-                    int result = p.getStock() - cantidad;
-                    if (result < 0) return Mono.error(new BusinessException.BadRequest("Stock insuficiente"));
-                    p.setStock(result);
-                    p.setFechaActualizacion(Instant.now());
-                    return productoRepository.save(p);
-                })
+        Query query = new Query(Criteria.where("_id").is(id)
+                .and("stock").gte(cantidad));
+        Update update = new Update()
+                .inc("stock", -cantidad)
+                .set("fechaActualizacion", Instant.now());
+
+        return mongoTemplate.findAndModify(query, update,
+                        FindAndModifyOptions.options().returnNew(true), Producto.class)
+                .switchIfEmpty(
+                        productoRepository.findById(id)
+                                .flatMap(p -> {
+                                    if (p.getStock() < cantidad) {
+                                        return Mono.error(new BusinessException.BadRequest("Stock insuficiente"));
+                                    }
+                                    return Mono.error(new BusinessException.NotFound("Producto no encontrado"));
+                                })
+                                .switchIfEmpty(Mono.error(new BusinessException.NotFound("Producto no encontrado: " + id)))
+                                .cast(Producto.class)
+                )
                 .map(ProductoResponse::fromEntity);
     }
 

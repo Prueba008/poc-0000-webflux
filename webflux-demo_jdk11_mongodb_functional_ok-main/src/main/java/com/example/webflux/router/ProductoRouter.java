@@ -22,11 +22,11 @@ public class ProductoRouter {
     public RouterFunction<ServerResponse> productoRoutes(ProductoHandler h) {
         return nest(path("/api/v2/productos"),
             route(GET("").and(accept(MediaType.APPLICATION_JSON)), h::getAll)
+                .andRoute(GET("/stream").and(accept(MediaType.TEXT_EVENT_STREAM)), h::stream)
                 .andRoute(GET("/{id}").and(accept(MediaType.APPLICATION_JSON)), h::getById)
                 .andRoute(POST("").and(contentType(MediaType.APPLICATION_JSON)), h::create)
                 .andRoute(PUT("/{id}").and(contentType(MediaType.APPLICATION_JSON)), h::update)
                 .andRoute(DELETE("/{id}"), h::delete)
-                .andRoute(GET("/stream").and(accept(MediaType.TEXT_EVENT_STREAM)), h::stream)
         );
     }
 }
