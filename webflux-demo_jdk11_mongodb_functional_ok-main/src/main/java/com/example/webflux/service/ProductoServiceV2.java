@@ -1,5 +1,6 @@
 package com.example.webflux.service;
 
+import com.example.webflux.exception.BusinessException;
 import com.example.webflux.model.Producto;
 import com.example.webflux.repository.ProductoRepository;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +23,8 @@ public class ProductoServiceV2 implements ProductoServiceImplV2 {
 
     @Override
     public Mono<Producto> save(Producto producto) {
-        return Mono.just(producto)
+        return Mono.justOrEmpty(producto)
+                .switchIfEmpty(Mono.error(new BusinessException.BadRequest("El producto es obligatorio")))
                 .flatMap(this::validateProducto)
                 .map(p -> {
                     if (p.getFechaCreacion() == null) p.setFechaCreacion(Instant.now());
@@ -35,6 +37,10 @@ public class ProductoServiceV2 implements ProductoServiceImplV2 {
 
     @Override
     public Flux<Producto> saveAll(Collection<Producto> productos) {
+        if (productos == null) {
+            return Flux.error(new BusinessException.BadRequest("La colección de productos es obligatoria"));
+        }
+
         return Flux.fromIterable(productos)
                 .map(p -> {
                     p.setId(null);

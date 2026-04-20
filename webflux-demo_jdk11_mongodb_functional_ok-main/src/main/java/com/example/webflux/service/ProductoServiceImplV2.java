@@ -1,5 +1,6 @@
 package com.example.webflux.service;
 
+import com.example.webflux.exception.BusinessException;
 import com.example.webflux.model.Producto;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -23,11 +24,14 @@ public interface ProductoServiceImplV2 {
 
     // --- Helper de Validación Reactiva ---
     default Mono<Producto> validateProducto(Producto p) {
+        if (p == null) {
+            return Mono.error(new BusinessException.BadRequest("El producto es obligatorio"));
+        }
         if (p.getStock() != null && p.getStock() < 0) {
-            return Mono.error(new IllegalArgumentException("El stock no puede ser negativo"));
+            return Mono.error(new BusinessException.BadRequest("El stock no puede ser negativo"));
         }
         if (p.getPrecio() != null && p.getPrecio().compareTo(BigDecimal.ZERO) < 0) {
-            return Mono.error(new IllegalArgumentException("El precio no puede ser negativo"));
+            return Mono.error(new BusinessException.BadRequest("El precio no puede ser negativo"));
         }
         return Mono.just(p);
     }
