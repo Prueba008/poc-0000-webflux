@@ -1,15 +1,11 @@
 package com.example.webflux.service;
 
-import com.example.webflux.controller.ProductoBulkControllerV2;
 import com.example.webflux.exception.BusinessException;
 import com.example.webflux.model.ProductDoc;
 import com.example.webflux.model.Producto;
-import com.example.webflux.model.dto.bulk.BulkOperationResult;
-import com.example.webflux.model.dto.bulk.BulkUpdateRequest;
 import com.example.webflux.model.dto.producto.ProductoRequest;
 import com.example.webflux.model.dto.producto.ProductoResponse;
 import com.example.webflux.repository.ProductoRepository;
-import com.example.webflux.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
@@ -89,9 +85,9 @@ public class ProductServiceImpl implements ProductService {
     @Override
     public Mono<Producto> save(ProductoRequest request) {
         return Mono.just(request)
-                .flatMap(this::validateRequest)          // Validación reactiva de reglas de negocio
-                .map(this::mapToEntity)                  // Transformación de DTO a Entidad de dominio
-                .flatMap(p -> {                          // Pipeline de persistencia con auditoría
+                .flatMap(this::validateRequest)
+                .map(this::mapToEntity)
+                .flatMap(p -> {
                     Instant now = Instant.now();
                     if (p.getId() == null) {
                         p.setFechaCreacion(now);
@@ -102,10 +98,9 @@ public class ProductServiceImpl implements ProductService {
                     p.setFechaActualizacion(now);
                     return productoRepository.save(p);
                 })
-                .doOnSuccess(p -> log.info("Producto persistido exitosamente con ID: {}", p.getId())) //
+                .doOnSuccess(p -> log.info("Producto persistido exitosamente con ID: {}", p.getId()))
                 .doOnError(e -> log.error("Error crítico durante la persistencia: {}", e.getMessage()));
     }
-
 
     @Override
     public Mono<ProductoResponse> update(String id, ProductoRequest req) {
@@ -148,7 +143,7 @@ public class ProductServiceImpl implements ProductService {
                     if (p.getActivo() == null) p.setActivo(true);
                     return p;
                 })
-                .collectList() // Agrupa para minimizar latencia de red si el driver lo soporta
+                .collectList()
                 .flatMapMany(productoRepository::saveAll);
     }
 
