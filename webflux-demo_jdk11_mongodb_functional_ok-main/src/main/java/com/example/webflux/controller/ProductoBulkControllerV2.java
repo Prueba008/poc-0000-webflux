@@ -1,5 +1,6 @@
 package com.example.webflux.controller;
 
+import com.example.webflux.model.Producto;
 import com.example.webflux.model.dto.ErrorDetail;
 import com.example.webflux.model.dto.bulk.BulkOperationResult;
 import com.example.webflux.model.dto.bulk.BulkUpdateRequest;
@@ -38,8 +39,8 @@ public class ProductoBulkControllerV2 {
      * Implementa un patrón de error parcial (Partial Failure) para resiliencia.
      */
     @PutMapping("/update")
-    public Mono<ResponseEntity<BulkOperationResult>> updateBulk(@Valid @RequestBody BulkUpdateRequest request) {
-        List<com.example.webflux.model.Producto> productos = request.getProductos() == null
+    public Mono<ResponseEntity<BulkOperationResult>> updateBulk(@Valid @RequestBody(required = false) BulkUpdateRequest request) {
+        List<Producto> productos = request == null || request.getProductos() == null
                 ? Collections.emptyList()
                 : request.getProductos();
 
