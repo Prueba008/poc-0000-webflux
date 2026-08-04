@@ -1,8 +1,10 @@
 package com.example.webflux.controller;
 
+import com.example.webflux.model.Producto;
 import com.example.webflux.model.dto.ErrorDetail;
 import com.example.webflux.model.dto.bulk.BulkOperationResult;
 import com.example.webflux.model.dto.bulk.BulkUpdateRequest;
+import com.example.webflux.model.dto.producto.ProductoRequest;
 import com.example.webflux.service.ProductService;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -13,7 +15,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import javax.validation.Valid;
-import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -27,6 +29,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ProductoBulkControllerV2 {
 
+    private static final int CONCURRENCY_LIMIT = 32;
+    private static final String BULK_UPDATE_OPERATION = "BULK_UPDATE";
+
     private final ProductService productoService;
 
     /**
@@ -34,22 +39,27 @@ public class ProductoBulkControllerV2 {
      * Implementa un patrón de error parcial (Partial Failure) para resiliencia.
      */
     @PutMapping("/update")
-    public Mono<ResponseEntity<BulkOperationResult>> updateBulk(@Valid @RequestBody BulkUpdateRequest request) {
-        final int CONCURRENCY_LIMIT = 32;
+    public Mono<ResponseEntity<BulkOperationResult>> updateBulk(@Valid @RequestBody(required = false) BulkUpdateRequest request) {
+        List<Producto> productos = request == null || request.getProductos() == null
+                ? Collections.emptyList()
+                : request.getProductos();
 
-        return Flux.fromIterable(request.getProductos())
+        return Flux.fromIterable(productos)
                 .flatMap(dto -> {
-                    if (dto.getId() == null) return Mono.just(ItemResult.fail(null, "ID requerido"));
+                    if (dto.getId() == null || dto.getId().isBlank()) {
+                        return Mono.just(ItemResult.fail(dto.getId(), "ID requerido"));
+                    }
 
-                    return productoService.findById(dto.getId())
-                            .flatMap(existing -> {
-                                // Mapeo parcial preventivo
-                                if (dto.getNombre() != null) existing.setNombre(dto.getNombre());
-                                if (dto.getPrecio() != null) existing.setPrecio(dto.getPrecio());
-                                if (dto.getStock() != null) existing.setStock(dto.getStock());
-                                existing.setFechaActualizacion(Instant.now());
-                                return productoService.save(existing);
-                            })
+                    ProductoRequest req = ProductoRequest.builder()
+                            .nombre(dto.getNombre())
+                            .descripcion(dto.getDescripcion())
+                            .precio(dto.getPrecio())
+                            .stock(dto.getStock())
+                            .categoria(dto.getCategoria())
+                            .activo(dto.getActivo())
+                            .build();
+
+                    return productoService.patch(dto.getId(), req)
                             .map(saved -> ItemResult.ok(saved.getId()))
                             .onErrorResume(e -> Mono.just(ItemResult.fail(dto.getId(), e.getMessage())));
                 }, CONCURRENCY_LIMIT)
@@ -69,7 +79,7 @@ public class ProductoBulkControllerV2 {
                 .collect(Collectors.toList());
 
         return ResponseEntity.ok(BulkOperationResult.builder()
-                .operation("BULK_UPDATE")
+                .operation(BULK_UPDATE_OPERATION)
                 .successCount(successIds.size())
                 .failedCount(errors.size())
                 .successIds(successIds)

@@ -40,7 +40,7 @@ public interface ProductService {
      * CORRECCIÓN: El método debe recibir ProductoRequest para persistencia.
      * Retorna la entidad para uso interno o composición.
      */
-    Mono<Producto> save(ProductoResponse request);
+    Mono<Producto> save(ProductoRequest request);
 
     Mono<ProductoResponse> update(String id, ProductoRequest req);
 
